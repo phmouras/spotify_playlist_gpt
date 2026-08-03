@@ -32,9 +32,9 @@ from model import GPTConfig, GPT
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--block_size", type=int, default = 128) # size of context
-parser.add_argument("--n_layer", type=int, default = 2)      # transformer blocks: SA, FFN, LN, RC
-parser.add_argument("--n_head", type=int, default = 2)       # head attention
-parser.add_argument("--n_embd", type=int, default = 24)      # dim embedding. n_embd % n_head = 0
+parser.add_argument("--n_layer", type=int, default = 4)      # transformer blocks: SA, FFN, LN, RC
+parser.add_argument("--n_head", type=int, default = 4)       # head attention
+parser.add_argument("--n_embd", type=int, default = 64)      # dim embedding. n_embd % n_head = 0
 parser.add_argument("--checkpoint_dir", type=str, default = "./out/checkpoint_play.pt")
 args = parser.parse_args()
 
@@ -85,8 +85,8 @@ model_args = dict(n_layer=args.n_layer,
 gptconf = GPTConfig(**model_args) # model object
 
 # gradient_accumulation_steps = 1 * 8 # used to simulate larger batch sizes
-gradient_accumulation_steps = 1 
-batch_size = 64 # if gradient_accumulation_steps > 1, this is the micro-batch size
+gradient_accumulation_steps = 2 
+batch_size = 16 # n of sequences processed in parallel
 block_size = gptconf.block_size
 
 # model
