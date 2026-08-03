@@ -11,9 +11,10 @@ import pickle
 from pathlib import Path
 import sys
 
+import pandas as pd
 import numpy as np
 
-from tokenizador_playlist_spotify import load_playlists_from_json, build_global_vocabs, encode_playlist, validate_corpus
+from tokenizador_playlist_spotify import load_playlists_from_json, build_global_vocabs, encode_playlist
 
 
 parser = argparse.ArgumentParser()
@@ -43,12 +44,38 @@ output_dir.mkdir(parents=True, exist_ok=True)
 logger.info("Loading playlists...")
 
 try:        
-    df = load_playlists_from_json(
+
+    dataframe_chunks = []
+
+    for index, df_chunks in enumerate(load_playlists_from_json(
         json_path=json_dir,
         max_files=args.max_files,
+        chunk_size=500_000,
+        selected_columns=[
+            "pid",
+            "pos",
+            "track_uri"]), start=1):
+
+        logger.info("Chunk %s: %s rows loaded", index, f"{len(df_chunks):,}")
+
+        dataframe_chunks.append(df_chunks)  
+
+    logger.info("Combining DataFrame chunks...")
+
+    df = pd.concat(dataframe_chunks, ignore_index=True)
+
+    del dataframe_chunks
+
+    # RAM usage in MB
+    memory_mb = (df.memory_usage(index=True, deep=True).sum()/1024**2)
+
+    logger.info(
+        "Final DataFrame memory usage: %.2f MB",
+        memory_mb,
     )
-except Exception as e:
-    logger.error("Error to load playlists")
+
+except Exception:
+    logger.exception("Error to load playlists")
     sys.exit(1)
 
 logger.info("%s rows loaded:", f"{len(df):,}")
@@ -56,20 +83,26 @@ logger.info("%s playlists found:", f"{df['pid'].nunique():,}")
 logger.info("%s unique tracks found:", f"{df['track_uri'].nunique():,}")
 logger.info("Building global vocabulary...")
 
-vocabs, vocab_size = build_global_vocabs(df)
+vocabs, vocab_size = build_global_vocabs(
+    json_path=json_dir,
+    max_files=args.max_files,
+)
 
 logger.info("Encoding playlists...")
 
-vf, indx_part = encode_playlist(df=df, vocabs=vocabs)
+vf, indx_part = encode_playlist(df, vocabs=vocabs)
 
 logger.info("Validating corpus.bin...")
 
-validate_corpus(
-    vf=vf,
-    indx_part=indx_part,
-    vocab_size=vocab_size,
-    expected_rows=len(df),
-)
+# validate corpus    
+if len(vf) == 0:
+    raise ValueError("The generated corpus is empty.")
+
+if len(indx_part) == 0:
+    raise ValueError("No playlists were indexed.")
+
+if vf.max() >= vocab_size:
+    raise ValueError(f"Token {vf.max()} exceeds vocab_size={vocab_size}")
 
 vf.astype(np.uint32).tofile(output_dir/"corpus.bin")
 
